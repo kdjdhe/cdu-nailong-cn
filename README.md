@@ -16,7 +16,7 @@
 
 ## 相关站点与致谢
 
-- 馆藏画作出自「奶蛙博物馆 · Musée du Milk Frog」（works.cohub.live）与「奶蛙艺术圣殿 · naiwa-wallpaper」素材库，版权归原作者所有
+- 馆藏画作出自「[奶蛙博物馆 · Musée du Milk Frog](https://works.cohub.live/w/157e937b-95da-4c17-add4-f916e37c3574/milk-frog-museum/2927949457b0/content/index.html)」与「[奶蛙艺术圣殿 · naiwa-wallpaper](https://github.com/Nailong-Studio/wallpaper)」素材库，版权归原作者所有
 - 部署：Cloudflare Workers
 
 ---
