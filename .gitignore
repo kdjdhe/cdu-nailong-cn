@@ -16,3 +16,6 @@ s.txt
 # 系统文件
 Thumbs.db
 .DS_Store
+
+# 个人参考截图（与仓库无关）
+cfw/

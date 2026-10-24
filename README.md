@@ -10,7 +10,8 @@
 |---|---|
 | `prototype/index.html` | 页面本体（单文件 HTML/CSS/JS），双击即可本地预览 |
 | `prototype/assets/` | 全部静态素材：33+ 幅馆藏画作 webp、头像表情环、门面肌理、幽灵奶蛙、音效 |
-| `build-worker.mjs` | 构建脚本：把原型打包成 Cloudflare Worker（`node build-worker.mjs` 生成 `dist/`） |
+| `build-worker.mjs` | 构建脚本：把原型打包成部署目录 `dist/`（`node build-worker.mjs`；`--maintenance` 生成全站 503 维护页） |
+| `deploy/` | 首尔 VPS 直接部署：`deploy-seoul.sh` 一键构建上传，`cdu-nailong.nginx.conf` 为服务器 nginx 站点配置 |
 | `docs/设计说明.md` | 视觉与交互设计说明（三幕结构、动效细节） |
 
 ## 页面结构（三段）
@@ -27,13 +28,19 @@
 
 ## 构建与部署
 
-```bash
-# 修改 prototype/ 后构建
-node build-worker.mjs
+部署方式（2026-10-24 起）：**首尔 VPS 直接托管**（境外服务器免备案），不再走 Cloudflare Workers。
 
-# 部署到 Cloudflare Workers
-cd dist && npx wrangler deploy
+```bash
+# 修改 prototype/ 后一键构建 + 上传首尔服务器
+bash deploy/deploy-seoul.sh
 ```
+
+服务器侧（已配置好，一般无需再动）：
+
+- 站点目录 `/var/www/cdu-nailong`，nginx 站点配置 `/etc/nginx/sites-available/cdu-nailong.cn`
+- TLS 证书：Let's Encrypt（certbot 已签发，DNS-only 记录 + HTTP-01，自动续期）
+- DNS（Cloudflare，2026-10-24 切换）：`@` 与 `www` 两条 A 记录 → `43.128.131.154`，仅 DNS 不走 CF 代理；原 Worker 自定义域已删除
+- 历史方案：Cloudflare Workers（`cd dist && npx wrangler deploy`）已弃用，构建产物 `dist/_worker.js` 仍保留，仅作为部署到其他 Workers 环境的备选
 
 `dist/` 为构建产物，不入库（见 `.gitignore`）。
 

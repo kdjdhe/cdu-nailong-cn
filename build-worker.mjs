@@ -1,11 +1,96 @@
 // 从 prototype/index.html + prototype/assets/ 构建部署目录 dist/
-// 用法：node build-worker.mjs
+// 用法：node build-worker.mjs                → 正常站点
+//       node build-worker.mjs --maintenance  → 维护模式（ICP 备案审核期，全站 503）
 // 部署：npx wrangler deploy   （读取 wrangler.toml，静态资产自动上传）
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, copyFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-// ---------- 1. 生成 dist/index.html ----------
-const html = readFileSync('prototype/index.html', 'utf8');
+// ---------- 维护模式（ICP 备案审核期间） ----------
+// 全站返回 503 + 中性维护页：不返回任何站点内容，也不出现站点名称，
+// 避免审核时被判定"网站名称与内容不符"；自定义域名绑定保留，备案通过后正常构建即可恢复。
+const MAINTENANCE = process.argv.includes('--maintenance');
+
+if (MAINTENANCE) {
+  const body = '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+    + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    + '<meta name="robots" content="noindex,nofollow">'
+    + '<title>网站维护中</title><style>'
+    + 'html,body{height:100%;margin:0}'
+    + 'body{display:flex;align-items:center;justify-content:center;background:#14120e;'
+    + 'color:#c9b689;font:15px/1.9 Georgia,"Songti SC",serif;text-align:center}'
+    + '.box{padding:32px 26px}'
+    + 'h1{margin:0 0 12px;font-size:16px;font-weight:500;letter-spacing:.34em;color:#d4af37}'
+    + 'p{margin:0;font-size:13px;letter-spacing:.1em;opacity:.7}'
+    + '</style></head><body><div class="box"><h1>网站维护中</h1>'
+    + '<p>本站正在维护，请稍后再访问。</p></div></body></html>';
+
+  const maintWorker = `// 维护模式构建产物（ICP 备案审核期间）——全站 503，不返回任何站点内容。
+// 恢复：node build-worker.mjs（不带参数）→ cd dist && npx wrangler deploy
+const BODY = ${JSON.stringify(body)};
+
+export default {
+  async fetch() {
+    return new Response(BODY, {
+      status: 503,
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+        'retry-after': '86400',
+        'x-robots-tag': 'noindex, nofollow, noarchive',
+      },
+    });
+  },
+};
+`;
+
+  rmSync('dist', { recursive: true, force: true });
+  mkdirSync('dist', { recursive: true });
+  writeFileSync('dist/_worker.js', maintWorker);
+  writeFileSync('dist/wrangler.toml', `name = "cdu-nailong"
+main = "_worker.js"
+compatibility_date = "2026-10-01"
+
+# 自定义域名绑定保持不变：备案审核期间域名不解绑，只让内容不可见
+routes = [
+  { pattern = "xn--psszg58c53lfp7dgls.cn", custom_domain = true },
+  { pattern = "www.xn--psszg58c53lfp7dgls.cn", custom_domain = true }
+]
+`);
+  console.log('dist/ built (MAINTENANCE mode):');
+  console.log('  _worker.js  ', maintWorker.length, 'bytes — 全站 503');
+  console.log('  wrangler.toml — 自定义域名绑定保留，静态资产不上传');
+  console.log('deploy: cd dist && npx wrangler deploy');
+  process.exit(0);
+}
+
+// ---------- 0. 小图内联：首屏小图转 data URI，砍掉高延迟链路上的额外往返 ----------
+// 第一幕全部小图（勋章中心 + 12 颗环头像 + 门面剪影×2）+ 幽灵奶蛙×4 内联进 HTML。
+// 每一个都是 4~6KB 的小文件，但在 CF 大陆→美西链路上每个请求都是一次 2~13s 的折返，
+// 内联后首屏请求数从 16 个降到 2 个（HTML + 背景画 art-08）。
+const INLINE = [
+  'nailong-core.webp',
+  ...Array.from({ length: 12 }, (_, i) => `ring-${String(i).padStart(2, '0')}.webp`),
+  'gate-emblem-think.webp',
+  'gate-emblem-laugh.webp',
+  'frog-01.webp', 'frog-02.webp', 'frog-03.webp', 'frog-04.webp',
+];
+const dataUri = {};
+for (const f of INLINE) {
+  const buf = readFileSync(join('prototype/assets', f));
+  const b64 = buf.toString('base64');
+  const mime = f.endsWith('.webp') ? 'image/webp' : 'application/octet-stream';
+  dataUri[f] = `data:${mime};base64,${b64}`;
+}
+
+let html = readFileSync('prototype/index.html', 'utf8');
+let inlined = 0;
+for (const [name, uri] of Object.entries(dataUri)) {
+  // 只替换精确的资产路径引用（src="..."、url('...')、数组字符串），防止误伤同名前缀
+  const parts = html.split(`assets/${name}`);
+  if (parts.length > 1) inlined += parts.length - 1;
+  html = parts.join(uri);
+}
+console.log(`inlined ${Object.keys(dataUri).length} images (${inlined} references) as data URIs`);
 const esc = html.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
 
 const htmlHash = /* 简易 FNV-1a 内容指纹，HTML 变则变 */
@@ -86,6 +171,7 @@ export default {
         'content-security-policy':
           "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
           + "img-src 'self' data: blob: https://xn--psszg58c53lfp7dgls.cn; "
+          + "media-src 'self'; "
           + "connect-src 'none'; form-action 'none'; base-uri 'none'",
       },
     });
